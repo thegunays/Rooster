@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test -- --reporter=verbose
+      - run: npm run build
+      - run: npm run check:build-outputs -- production
+      - run: npm run build:harness
+      - run: npm run check:build-outputs -- harness
+      - run: npm run audit:prod
+      - run: npm run package:vsix
+      - run: git diff --exit-code
+      - name: Reject unexpected untracked source files
+        run: test -z "$(git ls-files --others --exclude-standard)"

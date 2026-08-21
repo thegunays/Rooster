@@ -1,0 +1,93 @@
+{
+  "manifestVersion": 1,
+  "id": "roosterjs-description-editor",
+  "publisher": "ygdb121",
+  "version": "0.1.23",
+  "name": "Rooster Description Editor",
+  "description": "Adds a RoosterJS-based rich editor control for System.Description on selected work item types.",
+  "public": false,
+  "categories": [
+    "Plan and track"
+  ],
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "scopes": [
+    "vso.work_write"
+  ],
+  "files": [
+    {
+      "path": "static",
+      "addressable": true
+    },
+    {
+      "path": "dist",
+      "addressable": true
+    }
+  ],
+  "contributions": [
+    {
+      "id": "rooster-description-control",
+      "type": "ms.vss-work-web.work-item-form-control",
+      "description": "RoosterJS editor for System.Description",
+      "targets": [
+        "ms.vss-work-web.work-item-form"
+      ],
+      "properties": {
+        "name": "Description (Rooster)",
+        "uri": "static/control.html",
+        "height": 570,
+        "inputs": [
+          {
+            "id": "FieldName",
+            "description": "Target field reference name.",
+            "type": "WorkItemField",
+            "properties": {
+              "workItemFieldTypes": [
+                "HTML"
+              ]
+            },
+            "validation": {
+              "dataType": "String",
+              "isRequired": true
+            }
+          },
+          {
+            "id": "EnabledWits",
+            "description": "Comma-separated list of enabled work item types.",
+            "validation": {
+              "dataType": "String",
+              "isRequired": true
+            }
+          },
+          {
+            "id": "DebounceMs",
+            "description": "Autosync debounce value in milliseconds.",
+            "validation": {
+              "dataType": "String",
+              "isRequired": false
+            }
+          },
+          {
+            "id": "EnableMarkdownAutoformat",
+            "description": "Enable markdown auto-format shortcuts.",
+            "validation": {
+              "dataType": "String",
+              "isRequired": false
+            }
+          },
+          {
+            "id": "EnableCodeBlock",
+            "description": "Enable code block toolbar action.",
+            "validation": {
+              "dataType": "String",
+              "isRequired": false
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

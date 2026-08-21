@@ -1,0 +1,6 @@
+node_modules/
+dist/
+artifacts/
+.superpowers/
+npm-debug.log*
+.DS_Store

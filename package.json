@@ -1,0 +1,39 @@
+{
+  "name": "roosterjs-ado-ext",
+  "version": "0.1.23",
+  "private": true,
+  "description": "Azure DevOps work item custom control using RoosterJS for System.Description",
+  "scripts": {
+    "clean": "node scripts/clean-generated.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run clean && webpack --mode production",
+    "build:harness": "npm run clean && webpack --mode development --env harness",
+    "check:build-outputs": "node scripts/check-build-outputs.mjs",
+    "build:dev": "npm run clean && webpack --mode development",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "audit:prod": "npm audit --omit=dev",
+    "check:release": "node scripts/check-release-contract.mjs",
+    "package:vsix": "npm run build && npm run check:release && node scripts/package-vsix.mjs && node scripts/verify-vsix.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run check:build-outputs -- production && npm run build:harness && npm run check:build-outputs -- harness && npm run package:vsix"
+  },
+  "dependencies": {
+    "azure-devops-extension-api": "4.266.0",
+    "azure-devops-extension-sdk": "4.2.0",
+    "css-tree": "3.2.1",
+    "dompurify": "3.4.13",
+    "roosterjs": "9.45.2"
+  },
+  "devDependencies": {
+    "@types/css-tree": "3.2.0",
+    "@types/node": "24.5.2",
+    "jsdom": "26.1.0",
+    "rimraf": "6.0.1",
+    "tfx-cli": "0.23.1",
+    "ts-loader": "9.5.4",
+    "typescript": "5.9.2",
+    "vitest": "^4.1.2",
+    "webpack": "^5.105.4",
+    "webpack-cli": "6.0.1"
+  }
+}
