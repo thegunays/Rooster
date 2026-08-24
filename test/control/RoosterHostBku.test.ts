@@ -12,6 +12,13 @@ const bkuFixture = readFileSync(resolve("test/fixtures/bku-template.html"), "utf
 
 const disposables: Array<() => void> = [];
 
+if (!("getBoundingClientRect" in Range.prototype)) {
+  Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+    configurable: true,
+    value: () => new DOMRect(0, 0, 0, 0)
+  });
+}
+
 afterEach(() => {
   while (disposables.length > 0) {
     disposables.pop()?.();
@@ -135,6 +142,33 @@ describe("RoosterHost canonical BKU ownership", () => {
     expect(internalCarrierAttributes(editorDiv)).toEqual([]);
     expect(internalCarrierAttributes(new DOMParser().parseFromString(changes[0], "text/html"))).toEqual(
       []
+    );
+  });
+
+  it("preserves table section semantics when selected text is replaced", () => {
+    const canonical = sanitizer.normalizeHtml(
+      '<style>.report thead th{font-weight:700;text-align:left}.report tbody td{font-weight:300}</style>' +
+        '<p id="replace-me">replace me</p>' +
+        '<table class="report"><thead><tr><th>Heading</th></tr></thead>' +
+        '<tbody><tr><td>Value</td></tr></tbody></table>'
+    );
+    const { host, editorDiv } = createHost(canonical);
+    const editor = getInstalledEditor(host);
+    selectContents(editor, requiredElement(editorDiv, "#replace-me"));
+    const changes: string[] = [];
+    host.onChange(nextHtml => changes.push(nextHtml));
+
+    replaceSelectionWithText(host, "s");
+
+    expect(changes).toHaveLength(1);
+    const parsed = new DOMParser().parseFromString(host.getHtml(), "text/html");
+    const table = requiredElement<HTMLTableElement>(parsed, "table.report");
+    expect(table.querySelectorAll(":scope > thead")).toHaveLength(1);
+    expect(table.querySelectorAll(":scope > tbody")).toHaveLength(1);
+    expect(requiredElement(table, "thead th").textContent).toBe("Heading");
+    expect(requiredElement(table, "tbody td").textContent).toBe("Value");
+    expect(parsed.querySelector("style")?.textContent).toContain(
+      "[data-rdx-content-root] .report thead th"
     );
   });
 
@@ -331,6 +365,11 @@ describe("RoosterHost canonical BKU ownership", () => {
 
     expect(requiredElement(editorDiv, "#message.notice").textContent).toBe("alpha");
     expect(editorDiv.querySelector("#message.notice b,#message.notice strong")).toBeNull();
+    expect(directChildren(editorDiv, "style")).toHaveLength(1);
+    expect(requiredDirectChild(editorDiv, "style").textContent).toContain(
+      "[data-rdx-content-root] .notice"
+    );
+    expect(host.getHtml()).toBe(canonical);
     expect(directChildren(editorDiv, "[data-rdx-content-root]")).toHaveLength(1);
     expect(
       selectionIsContained(
@@ -343,6 +382,10 @@ describe("RoosterHost canonical BKU ownership", () => {
 
     expect(requiredElement(editorDiv, "#message.notice b,#message.notice strong").textContent).toBe(
       "alpha"
+    );
+    expect(directChildren(editorDiv, "style")).toHaveLength(1);
+    expect(requiredDirectChild(editorDiv, "style").textContent).toContain(
+      "[data-rdx-content-root] .notice"
     );
     expect(directChildren(editorDiv, "[data-rdx-content-root]")).toHaveLength(1);
     expect(
@@ -384,6 +427,52 @@ function selectContents(editor: IEditor, element: Element): void {
   const range = document.createRange();
   range.selectNodeContents(element);
   editor.setDOMSelection({ type: "range", range, isReverted: false });
+}
+
+function replaceSelectionWithText(host: RoosterHost, replacement: string): void {
+  const editor = getInstalledEditor(host);
+  const editorDiv = requiredElement<HTMLDivElement>(document, ".rdx-editor");
+  const canonicalRoot = requiredDirectChild<HTMLDivElement>(
+    editorDiv,
+    "[data-rdx-content-root]"
+  );
+  canonicalRoot.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: replacement
+    })
+  );
+
+  const selection = editor.getDOMSelection();
+  if (selection?.type !== "range") {
+    throw new Error("Expected a range selection after Rooster keyboard handling");
+  }
+  selection.range.deleteContents();
+  const text = document.createTextNode(replacement);
+  selection.range.insertNode(text);
+  const collapsedRange = document.createRange();
+  collapsedRange.setStartAfter(text);
+  collapsedRange.collapse(true);
+  editor.setDOMSelection({
+    type: "range",
+    range: collapsedRange,
+    isReverted: false
+  });
+  canonicalRoot.dispatchEvent(
+    new InputEvent("input", {
+      bubbles: true,
+      data: replacement,
+      inputType: "insertText"
+    })
+  );
+  canonicalRoot.dispatchEvent(
+    new KeyboardEvent("keyup", {
+      bubbles: true,
+      cancelable: true,
+      key: replacement
+    })
+  );
 }
 
 function selectionIsContained(editor: IEditor, root: HTMLElement): boolean {

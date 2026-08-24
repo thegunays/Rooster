@@ -1,4 +1,5 @@
 import {
+  ChangeSource,
   createEditor,
   insertLink,
   insertTable,
@@ -10,11 +11,13 @@ import {
   toggleNumbering,
   toggleUnderline,
   type ContentModelFormatBase,
+  type ContentModelTable,
   type EditorPlugin,
   type ElementProcessor,
   type FormatApplier,
   type FormatParser,
   type IEditor,
+  type PluginEvent,
   type Snapshot
 } from "roosterjs";
 import { TableContextMenu } from "./TableContextMenu";
@@ -32,6 +35,8 @@ const ROOT_ATTRIBUTE = "data-rdx-content-root";
 const EDITOR_LABEL = "Description editor";
 const INTERNAL_CARRIER_ATTRIBUTE_PREFIX = "data-rdx-editor-";
 const METADATA_CARRIER = "__rdxEditorMetadata";
+const TABLE_SECTION_CARRIER = "__rdxEditorTableSection";
+const CANONICAL_STYLES_SNAPSHOT_STATE = "rdxCanonicalStyles";
 const FORCED_CONTAINER_ID = "__rdx_editor_metadata_container__";
 const temporaryMetadataContainers = new WeakSet<HTMLElement>();
 const elementMetadataCarriers = new WeakMap<HTMLElement, MetadataCarrier>();
@@ -47,6 +52,7 @@ interface MetadataCarrier {
 }
 
 type MetadataElementGuard = (element: HTMLElement) => boolean;
+type TableSectionName = "thead" | "tbody" | "tfoot";
 
 function createMetadataParser(
   isCanonicalElement: MetadataElementGuard
@@ -81,6 +87,21 @@ function createBlockMetadataParser(
       return;
     }
     metadataParser(format, element, context, {});
+  };
+}
+
+function createTableSectionParser(
+  isCanonicalElement: MetadataElementGuard
+): FormatParser<ContentModelFormatBase> {
+  return (format, element) => {
+    if (!isCanonicalElement(element)) {
+      return;
+    }
+
+    const section = parseTableSectionName(element.tagName.toLowerCase());
+    if (section) {
+      format[TABLE_SECTION_CARRIER] = section;
+    }
   };
 }
 
@@ -186,6 +207,50 @@ function parseMetadataCarrier(value: ContentModelFormatBase[string]): MetadataCa
   }
 }
 
+function parseTableSectionName(value: unknown): TableSectionName | null {
+  return value === "thead" || value === "tbody" || value === "tfoot"
+    ? value
+    : null;
+}
+
+function restoreCanonicalTableSections(table: ContentModelTable): void {
+  const tableElement = table.cachedElement;
+  if (!tableElement) {
+    return;
+  }
+
+  const rows = table.rows.map(row => ({
+    element: row.cachedElement,
+    section: parseTableSectionName(
+      (row.format as ContentModelFormatBase)[TABLE_SECTION_CARRIER]
+    )
+  }));
+  if (!rows.some(row => row.section !== null)) {
+    return;
+  }
+
+  const fragment = tableElement.ownerDocument.createDocumentFragment();
+  let activeSection: HTMLTableSectionElement | null = null;
+  let activeSectionName: TableSectionName | null = null;
+  for (const row of rows) {
+    if (!row.element) {
+      continue;
+    }
+    const sectionName = row.section ?? "tbody";
+    if (sectionName !== activeSectionName) {
+      activeSection = tableElement.ownerDocument.createElement(sectionName);
+      fragment.appendChild(activeSection);
+      activeSectionName = sectionName;
+    }
+    activeSection?.appendChild(row.element);
+  }
+
+  [...tableElement.children]
+    .filter(element => element.matches("thead,tbody,tfoot"))
+    .forEach(section => section.remove());
+  tableElement.appendChild(fragment);
+}
+
 function createMetadataContainerProcessor(
   tagName: "blockquote" | "div" | "section",
   isCanonicalElement: MetadataElementGuard
@@ -247,6 +312,7 @@ class CanonicalMetadataPlugin implements EditorPlugin {
       return canonicalRoot !== null && canonicalRoot.contains(element);
     };
     const metadataParser = createMetadataParser(isCanonicalElement);
+    const tableSectionParser = createTableSectionParser(isCanonicalElement);
     const blockMetadataParser = createBlockMetadataParser(
       isCanonicalElement,
       metadataParser
@@ -274,7 +340,7 @@ class CanonicalMetadataPlugin implements EditorPlugin {
       segment: [metadataParser],
       table: [metadataParser],
       tableCell: [metadataParser],
-      tableRow: [metadataParser],
+      tableRow: [tableSectionParser, metadataParser],
       listItemElement: [metadataParser],
       listLevel: [metadataParser],
       image: [metadataParser],
@@ -302,6 +368,24 @@ class CanonicalMetadataPlugin implements EditorPlugin {
       div: createMetadataContainerProcessor("div", isCanonicalElement),
       section: createMetadataContainerProcessor("section", isCanonicalElement)
     };
+    const defaultTableHandler = modelSettings.defaultModelHandlers.table;
+    const canonicalTableHandler: typeof defaultTableHandler = (
+      document,
+      parent,
+      table,
+      context,
+      refNode
+    ) => {
+      const nextRefNode = defaultTableHandler(
+        document,
+        parent,
+        table,
+        context,
+        refNode
+      );
+      restoreCanonicalTableSections(table);
+      return nextRefNode;
+    };
 
     domOptions.processorOverride = {
       ...domOptions.processorOverride,
@@ -319,7 +403,12 @@ class CanonicalMetadataPlugin implements EditorPlugin {
       modelOptions.additionalFormatAppliers,
       metadataFormatAppliers
     );
+    modelOptions.modelHandlerOverride = {
+      ...modelOptions.modelHandlerOverride,
+      table: canonicalTableHandler
+    };
     Object.assign(domSettings.elementProcessors, metadataProcessorOverrides);
+    modelSettings.modelHandlers.table = canonicalTableHandler;
     for (const parsers of Object.values(parserMap)) {
       for (let index = 0; index < parsers.length; index += 1) {
         if (parsers[index] === defaultIdParser) {
@@ -329,6 +418,55 @@ class CanonicalMetadataPlugin implements EditorPlugin {
     }
     appendFormatHandlers(parserMap, metadataFormatParsers);
     appendFormatHandlers(applierMap, metadataFormatAppliers);
+  };
+
+  dispose = (): void => undefined;
+}
+
+class CanonicalStylesSnapshotPlugin implements EditorPlugin {
+  constructor(
+    private readonly getEditorDiv: () => HTMLDivElement,
+    private readonly getCanonicalRoot: () => HTMLDivElement | null,
+    private readonly onCanonicalSnapshotRestored: () => void
+  ) {}
+
+  getName = (): string => "CanonicalStylesSnapshot";
+
+  initialize = (): void => undefined;
+
+  onPluginEvent = (event: PluginEvent): void => {
+    if (event.eventType === "beforeAddUndoSnapshot") {
+      if (this.getCanonicalRoot()) {
+        event.additionalState[CANONICAL_STYLES_SNAPSHOT_STATE] = JSON.stringify(
+          getDirectStyles(this.getEditorDiv()).map(style => style.textContent ?? "")
+        );
+      }
+      return;
+    }
+
+    if (
+      event.eventType !== "contentChanged" ||
+      event.source !== ChangeSource.SetContent
+    ) {
+      return;
+    }
+
+    const styles = parseCanonicalStylesSnapshot(
+      event.additionalState?.[CANONICAL_STYLES_SNAPSHOT_STATE]
+    );
+    const editorDiv = this.getEditorDiv();
+    const canonicalRoot = this.getCanonicalRoot();
+    if (!styles || !canonicalRoot) {
+      return;
+    }
+
+    getDirectStyles(editorDiv).forEach(style => style.remove());
+    for (const cssText of styles) {
+      const style = editorDiv.ownerDocument.createElement("style");
+      style.textContent = cssText;
+      editorDiv.insertBefore(style, canonicalRoot);
+    }
+    this.onCanonicalSnapshotRestored();
   };
 
   dispose = (): void => undefined;
@@ -437,6 +575,14 @@ export class RoosterHost implements EditorHost {
       this.createToolbar(options.enableCodeBlock);
 
       const plugins: EditorPlugin[] = [
+        new CanonicalStylesSnapshotPlugin(
+          () => this.editorDiv,
+          () => getDirectCanonicalRoot(this.editorDiv),
+          () => {
+            this.synchronizeLogicalRoot();
+            this.ensureCanonicalSelection();
+          }
+        ),
         new CanonicalMetadataPlugin(() => getDirectCanonicalRoot(this.editorDiv)),
         new TableEditPlugin()
       ];
@@ -809,6 +955,26 @@ function getDirectCanonicalRoot(editorDiv: HTMLDivElement): HTMLDivElement | nul
     element.hasAttribute(ROOT_ATTRIBUTE)
   );
   return roots.length === 1 && roots[0] instanceof HTMLDivElement ? roots[0] : null;
+}
+
+function getDirectStyles(editorDiv: HTMLDivElement): HTMLStyleElement[] {
+  return [...editorDiv.children].filter(
+    (element): element is HTMLStyleElement => element.tagName === "STYLE"
+  );
+}
+
+function parseCanonicalStylesSnapshot(value: unknown): string[] | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every(item => typeof item === "string")
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function stripInternalCarrierAttributes(root: ParentNode): void {
