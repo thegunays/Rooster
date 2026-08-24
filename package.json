@@ -1,6 +1,6 @@
 {
   "name": "roosterjs-ado-ext",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "private": true,
   "description": "Azure DevOps work item custom control using RoosterJS for System.Description",
   "scripts": {

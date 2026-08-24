@@ -94,7 +94,7 @@ describe("real pinned tfx VSIX integration", () => {
         "static/control.css",
         "static/control.html"
       ],
-      version: "0.1.23",
+      version: "0.1.24",
       publisher: "ygdb121",
       extensionId: "roosterjs-description-editor",
       scopes: ["vso.work_write"]

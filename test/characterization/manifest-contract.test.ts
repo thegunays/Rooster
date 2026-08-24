@@ -36,7 +36,7 @@ describe("extension manifest contract", () => {
     expect(manifest).toMatchObject({
       publisher: "ygdb121",
       id: "roosterjs-description-editor",
-      version: "0.1.23",
+      version: "0.1.24",
       public: false,
       categories: ["Plan and track"],
       targets: [{ id: "Microsoft.VisualStudio.Services" }],

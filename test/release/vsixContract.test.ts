@@ -182,7 +182,7 @@ function createRepository(): string {
   return root;
 }
 
-function validVsixManifest(version = "0.1.23"): string {
+function validVsixManifest(version = "0.1.24"): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
@@ -315,7 +315,7 @@ describe("raw VSIX contract", () => {
     expect(result.report).toEqual({
       sha256: createHash("sha256").update(archive).digest("hex"),
       byteSize: archive.length,
-      version: "0.1.23",
+      version: "0.1.24",
       publisher: "ygdb121",
       extensionId: "roosterjs-description-editor",
       scopes: ["vso.work_write"],
@@ -543,7 +543,7 @@ describe("effective packaged metadata and payload bytes", () => {
   });
 
   it.each([
-    ["version", validVsixManifest("0.1.24")],
+    ["version", validVsixManifest("0.1.25")],
     ["publisher", validVsixManifest().replace('Publisher="ygdb121"', 'Publisher="other"')],
     ["identity", validVsixManifest().replace('Id="roosterjs-description-editor"', 'Id="other"')],
     ["public gallery flag", validVsixManifest().replace("<GalleryFlags/>", "<GalleryFlags>Public</GalleryFlags>")],
@@ -655,7 +655,7 @@ describe("effective packaged metadata and payload bytes", () => {
     const root = createRepository();
     const artifactTarget = join(root, "artifacts-real");
     mkdirSync(artifactTarget);
-    const artifactName = "ygdb121.roosterjs-description-editor-0.1.23.vsix";
+    const artifactName = "ygdb121.roosterjs-description-editor-0.1.24.vsix";
     writeFileSync(join(artifactTarget, artifactName), buildZip(validEntries(root)));
     symlinkSync(artifactTarget, join(root, "artifacts"), "dir");
 
@@ -743,13 +743,13 @@ if (process.env.LOCAL_TFX_EXTRA_OUTPUT === "1") {
 
     const artifact = join(
       fixture.root,
-      "artifacts/ygdb121.roosterjs-description-editor-0.1.23.vsix"
+      "artifacts/ygdb121.roosterjs-description-editor-0.1.24.vsix"
     );
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("VSIX package created.\n");
     expect(existsSync(fixture.globalLog)).toBe(false);
     expect(readdirSync(join(fixture.root, "artifacts"))).toEqual([
-      "ygdb121.roosterjs-description-editor-0.1.23.vsix"
+      "ygdb121.roosterjs-description-editor-0.1.24.vsix"
     ]);
     expect(readFileSync(fixture.localLog, "utf8")).toBe(JSON.stringify([
       "extension",
