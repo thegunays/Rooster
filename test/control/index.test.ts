@@ -11,6 +11,7 @@ const productionSdk = vi.hoisted(() => ({
   getService: vi.fn(),
   getContributionId: vi.fn(),
   register: vi.fn(),
+  resize: vi.fn(),
   notifyLoadSucceeded: vi.fn(),
   notifyLoadFailed: vi.fn()
 }));
@@ -150,6 +151,9 @@ function createFixture(options: BootstrapFixtureOptions = {}) {
       }
       return options.registerResult;
     },
+    resize: (width?: number, height?: number) => {
+      calls.push(`resize:${width}:${height}`);
+    },
     notifyLoadSucceeded: () => {
       calls.push("notifyLoadSucceeded");
       if (options.notifySuccessError) {
@@ -219,6 +223,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  document.body.replaceChildren();
 });
 
 const runtimePhaseCases: ReadonlyArray<{
@@ -302,6 +308,171 @@ describe("bootstrap", () => {
     expect(productionSdk.getHost).not.toHaveBeenCalled();
     expect(productionSdk.getExtensionContext).not.toHaveBeenCalled();
     expect(productionSdk.getService).not.toHaveBeenCalled();
+  });
+
+  it("requests parent-frame resizing after mount and responsive layout changes", async () => {
+    type RegisteredControl = {
+      onLoaded(args: { isReadOnly: boolean }): Promise<void>;
+      onUnloaded(args: { id: number }): Promise<void>;
+    };
+
+    const root = document.createElement("div");
+    root.id = "app";
+    document.body.appendChild(root);
+    const bridge = createBridge();
+    let viewportWidth = 1280;
+    let intrinsicHeight = 420;
+    let measurementError: Error | null = null;
+    let registeredControl: RegisteredControl | undefined;
+    const resizeObserverCallbacks: ResizeObserverCallback[] = [];
+    const resizeObservers: ControllableResizeObserver[] = [];
+
+    class ControllableResizeObserver implements ResizeObserver {
+      readonly observe = vi.fn();
+      readonly unobserve = vi.fn();
+      readonly disconnect = vi.fn();
+
+      constructor(callback: ResizeObserverCallback) {
+        resizeObserverCallbacks.push(callback);
+        resizeObservers.push(this);
+      }
+    }
+
+    vi.spyOn(window, "innerWidth", "get").mockImplementation(() => viewportWidth);
+    vi.spyOn(root, "scrollHeight", "get").mockImplementation(() => {
+      if (measurementError) {
+        throw measurementError;
+      }
+      return intrinsicHeight;
+    });
+    vi.stubGlobal("ResizeObserver", ControllableResizeObserver);
+    productionSdk.init.mockResolvedValue(undefined);
+    productionSdk.ready.mockResolvedValue(undefined);
+    productionSdk.getConfiguration.mockReturnValue({
+      witInputs: {
+        FieldName: "System.Description",
+        EnabledWits: "SRS"
+      }
+    });
+    productionSdk.getHost.mockReturnValue({ isHosted: true });
+    productionSdk.getExtensionContext.mockReturnValue({ version: "0.1.24" });
+    productionSdk.getContributionId.mockReturnValue("rooster-description-control");
+    productionSdk.register.mockImplementation((_id, factory: () => object) => {
+      registeredControl = factory() as RegisteredControl;
+    });
+    productionSdk.notifyLoadSucceeded.mockResolvedValue(undefined);
+    productionSdk.notifyLoadFailed.mockResolvedValue(undefined);
+
+    const productionDependencies = createProductionBootstrapDependencies();
+    await bootstrap({
+      ...productionDependencies,
+      createBridge: async () => bridge
+    });
+    if (!registeredControl) {
+      throw new Error("Expected the production control to be registered");
+    }
+
+    await registeredControl.onLoaded({ isReadOnly: false });
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(1);
+    expect.soft(productionSdk.resize).toHaveBeenNthCalledWith(1, 1280, 420);
+    expect.soft(resizeObservers[0]?.observe).toHaveBeenCalledWith(root);
+
+    viewportWidth = 720;
+    intrinsicHeight = 540;
+    window.dispatchEvent(new Event("resize"));
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(2);
+    expect.soft(productionSdk.resize).toHaveBeenNthCalledWith(2, 720, 540);
+
+    root.appendChild(document.createElement("p"));
+    intrinsicHeight = 880;
+    resizeObserverCallbacks[0]?.([], {} as ResizeObserver);
+    expect.soft(resizeObserverCallbacks[0]).toBeTypeOf("function");
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(3);
+    expect.soft(productionSdk.resize).toHaveBeenNthCalledWith(3, 720, 880);
+
+    intrinsicHeight = 360;
+    resizeObserverCallbacks[0]?.([], {} as ResizeObserver);
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(4);
+    expect.soft(productionSdk.resize).toHaveBeenNthCalledWith(4, 720, 360);
+
+    await registeredControl.onUnloaded({ id: 1 });
+    expect.soft(resizeObservers[0]?.disconnect).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new Event("resize"));
+    resizeObserverCallbacks[0]?.([], {} as ResizeObserver);
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(4);
+
+    viewportWidth = 1024;
+    intrinsicHeight = 460;
+    await registeredControl.onLoaded({ isReadOnly: false });
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(5);
+    expect.soft(productionSdk.resize).toHaveBeenNthCalledWith(5, 1024, 460);
+    expect.soft(resizeObservers[1]?.observe).toHaveBeenCalledWith(root);
+    viewportWidth = 900;
+    intrinsicHeight = 500;
+    window.dispatchEvent(new Event("resize"));
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(6);
+    expect.soft(productionSdk.resize).toHaveBeenNthCalledWith(6, 900, 500);
+    resizeObserverCallbacks[0]?.([], {} as ResizeObserver);
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(6);
+    resizeObserverCallbacks[1]?.([], {} as ResizeObserver);
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(7);
+    expect.soft(productionSdk.resize).toHaveBeenNthCalledWith(7, 900, 500);
+
+    await registeredControl.onUnloaded({ id: 1 });
+    expect.soft(resizeObservers[1]?.disconnect).toHaveBeenCalledTimes(1);
+
+    productionSdk.resize.mockImplementation(() => {
+      throw new Error("host resize failed");
+    });
+    await expect(
+      registeredControl.onLoaded({ isReadOnly: false })
+    ).resolves.toBeUndefined();
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(8);
+    expect.soft(productionSdk.resize).toHaveBeenNthCalledWith(8, 900, 500);
+    expect(() => window.dispatchEvent(new Event("resize"))).not.toThrow();
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(9);
+    expect(() =>
+      resizeObserverCallbacks[2]?.([], {} as ResizeObserver)
+    ).not.toThrow();
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(10);
+    await registeredControl.onUnloaded({ id: 1 });
+    expect.soft(resizeObservers[2]?.disconnect).toHaveBeenCalledTimes(1);
+    productionSdk.resize.mockImplementation(() => undefined);
+
+    class ThrowingResizeObserver {
+      constructor(_callback: ResizeObserverCallback) {
+        throw new Error("ResizeObserver unavailable");
+      }
+    }
+
+    vi.stubGlobal("ResizeObserver", ThrowingResizeObserver);
+    await expect(
+      registeredControl.onLoaded({ isReadOnly: false })
+    ).resolves.toBeUndefined();
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(11);
+    expect.soft(productionSdk.resize).toHaveBeenNthCalledWith(11, 900, 500);
+    window.dispatchEvent(new Event("resize"));
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(12);
+    await registeredControl.onUnloaded({ id: 1 });
+
+    vi.stubGlobal("ResizeObserver", undefined);
+    await expect(
+      registeredControl.onLoaded({ isReadOnly: false })
+    ).resolves.toBeUndefined();
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(13);
+    expect.soft(productionSdk.resize).toHaveBeenNthCalledWith(13, 900, 500);
+    window.dispatchEvent(new Event("resize"));
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(14);
+    await registeredControl.onUnloaded({ id: 1 });
+
+    measurementError = new Error("layout measurement failed");
+    await expect(
+      registeredControl.onLoaded({ isReadOnly: false })
+    ).resolves.toBeUndefined();
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(14);
+    expect(() => window.dispatchEvent(new Event("resize"))).not.toThrow();
+    expect.soft(productionSdk.resize).toHaveBeenCalledTimes(14);
+    await registeredControl.onUnloaded({ id: 1 });
   });
 
   it("initializes, validates, composes, registers, and succeeds in the exact order", async () => {

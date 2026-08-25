@@ -584,7 +584,16 @@ export class RoosterHost implements EditorHost {
           }
         ),
         new CanonicalMetadataPlugin(() => getDirectCanonicalRoot(this.editorDiv)),
-        new TableEditPlugin()
+        new TableEditPlugin(undefined, undefined, undefined, domHelper => {
+          const canonicalRoot = getDirectCanonicalRoot(this.editorDiv);
+          return domHelper
+            .queryElements("table")
+            .filter(table => table.isContentEditable)
+            .map(table => ({
+              table,
+              logicalRoot: canonicalRoot?.contains(table) ? canonicalRoot : null
+            }));
+        })
       ];
       if (options.enableMarkdownAutoformat) {
         plugins.push(

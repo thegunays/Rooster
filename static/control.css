@@ -17,22 +17,20 @@ html,
 body {
   margin: 0;
   padding: 0;
-  height: 100%;
   background: var(--rdx-bg);
   color: var(--rdx-text);
   font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 
 .rdx-app {
-  height: 100%;
   box-sizing: border-box;
 }
 
 .rdx-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 320px;
+  box-sizing: border-box;
   border: 1px solid var(--rdx-border);
   border-radius: 6px;
   overflow: hidden;
@@ -93,7 +91,7 @@ body {
 }
 
 .rdx-editor {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 220px;
   overflow: auto;
   padding: 10px;

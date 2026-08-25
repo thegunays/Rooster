@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { IEditor } from "roosterjs";
+import type { DOMHelper, IEditor } from "roosterjs";
 
 import { Sanitizer } from "../../src/bridge/Sanitizer";
 import { RoosterHost } from "../../src/control/RoosterHost";
@@ -204,6 +204,42 @@ describe("RoosterHost canonical BKU ownership", () => {
 
     host.setHtml("<p>raw</p>");
     expect(editorDiv.contentEditable).toBe("true");
+  });
+
+  it("keeps the canonical root editable after a TableEdit cell-resize lifecycle", () => {
+    const canonical = sanitizer.normalizeHtml(
+      "<table><tbody><tr><td>cell</td></tr></tbody></table><p>continue editing</p>"
+    );
+    const { host, editorDiv } = createHost(canonical);
+    const editor = getInstalledEditor(host);
+    const canonicalRoot = requiredDirectChild<HTMLDivElement>(
+      editorDiv,
+      "[data-rdx-content-root]"
+    );
+    const table = requiredElement<HTMLTableElement>(canonicalRoot, "table");
+    const tableEdit = getInstalledTableEditPlugin(editor);
+    Object.defineProperty(table, "isContentEditable", {
+      configurable: true,
+      value: true
+    });
+    const entry = tableEdit
+      .tableSelector(editor.getDOMHelper())
+      .find(candidate => candidate.table === table);
+    if (!entry) {
+      throw new Error("Expected the installed TableEdit selector to find the table");
+    }
+
+    tableEdit.setTableEditor(entry);
+    const tableEditor = tableEdit.tableEditor;
+    if (!tableEditor) {
+      throw new Error("Expected TableEdit to create a table editor");
+    }
+
+    tableEditor.onStartCellResize();
+    tableEditor.onFinishEditing();
+
+    expect.soft(editorDiv.contentEditable).toBe("false");
+    expect(canonicalRoot.contentEditable).toBe("true");
   });
 
   it("names the active editor across canonical, raw, and read-only transitions", () => {
@@ -421,6 +457,34 @@ function createHost(html: string): {
 
 function getInstalledEditor(host: RoosterHost): IEditor {
   return (host as unknown as { editor: IEditor }).editor;
+}
+
+type InstalledTableEntry = {
+  table: HTMLTableElement;
+  logicalRoot: HTMLDivElement | null;
+};
+
+type InstalledTableEditPlugin = {
+  getName(): string;
+  tableSelector(domHelper: DOMHelper): InstalledTableEntry[];
+  setTableEditor(entry: InstalledTableEntry): void;
+  tableEditor: {
+    onStartCellResize(): void;
+    onFinishEditing(): boolean;
+  } | null;
+};
+
+function getInstalledTableEditPlugin(editor: IEditor): InstalledTableEditPlugin {
+  const plugins = (
+    editor as unknown as {
+      core: { plugins: Array<{ getName(): string }> };
+    }
+  ).core.plugins;
+  const plugin = plugins.find(candidate => candidate.getName() === "TableEdit");
+  if (!plugin) {
+    throw new Error("Missing installed TableEdit plugin");
+  }
+  return plugin as InstalledTableEditPlugin;
 }
 
 function selectContents(editor: IEditor, element: Element): void {
