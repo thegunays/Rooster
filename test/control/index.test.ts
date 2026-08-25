@@ -355,7 +355,7 @@ describe("bootstrap", () => {
       }
     });
     productionSdk.getHost.mockReturnValue({ isHosted: true });
-    productionSdk.getExtensionContext.mockReturnValue({ version: "0.1.24" });
+    productionSdk.getExtensionContext.mockReturnValue({ version: "0.1.25" });
     productionSdk.getContributionId.mockReturnValue("rooster-description-control");
     productionSdk.register.mockImplementation((_id, factory: () => object) => {
       registeredControl = factory() as RegisteredControl;

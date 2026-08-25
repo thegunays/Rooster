@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "roosterjs-description-editor",
   "publisher": "ygdb121",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "name": "Rooster Description Editor",
   "description": "Adds a RoosterJS-based rich editor control for System.Description on selected work item types.",
   "public": false,
